@@ -608,26 +608,54 @@ STAGE 2 — cheap, re-runs in seconds, unlimited times
     <p>Do you have, or can you get access to, any machine with an NVIDIA graphics card?</p>
     <p>Not a blocker — but it turns a two-hour processing run into fifteen minutes, which matters a
     lot in the weeks where we're re-running things daily.</p></div>
+  <div class="box ok">
+    <span class="lbl">Devesh's answer · 10 Aug</span>
+    <p>Keep this API-based — no one should have to run anything on their own machine. For now,
+    processing stays on local hardware as already planned; if we later need real GPU throughput,
+    we reach for GPU-on-demand (rented, spun up per job) rather than buying or dedicating one.
+    Confirms §9's "own desktop, CPU-only" plan — this just fixes what happens when we outgrow it.</p></div>
 
   <div class="q"><span class="id">Q2 · Test photos</span>
     <p>How many photos can you assemble this week, and do you know any wedding photographer even
     loosely?</p>
     <p>Even a few hundred family-function photos lets us verify the pipeline end to end while we
     chase a real wedding folder.</p></div>
+  <div class="box ok">
+    <span class="lbl">Devesh's answer · 10 Aug</span>
+    <p>Bootstrap with a synthetic test set instead of waiting on a real wedding folder: cricket
+    players, because there's an abundance of public photos per person, across many events, angles
+    and lighting conditions — a reasonable stand-in for "same face, many different shots" while we
+    validate the pipeline mechanics. Building <code>scripts/build_test_dataset.py</code> to pull
+    this automatically; checked for a ready-made open dataset first, defaulting to a scripted pull
+    since nothing off-the-shelf fits. Doesn't replace real wedding data for tuning §4's clustering
+    thresholds later — it's only for proving detect → embed → cluster runs end to end.</p></div>
 
   <div class="q"><span class="id">Q3 · Who pays</span>
     <p>Read §7's risk box. Your instinct: does the photographer buy this, or the couple?</p>
     <p>We should each write an answer down before we start asking people, so we can tell later
     whether we were right or just persuaded ourselves.</p></div>
+  <div class="box ok">
+    <span class="lbl">Devesh's answer · 10 Aug</span>
+    <p>Depends on the sales channel, not a single answer: if we sell direct to the photographer,
+    the photographer pays; if we sell to the end customer (the couple/family), they pay. Both
+    channels stay open rather than picking one up front.</p></div>
 
   <div class="q"><span class="id">Q4 · Anything here you'd build differently</span>
     <p>Specifically §4 (R2 vs S3, Postgres vs a vector database) and §10's "no UI for two weeks".</p>
     <p>The second one is the one people usually argue with. Now is the cheap time to argue.</p></div>
+  <div class="box ok">
+    <span class="lbl">Devesh's answer · 10 Aug</span>
+    <p>Agreed on both — no changes to §4. On §10: yes, build the pipeline before touching UI.
+    Priority is getting the idea validated (does clustering actually work on real-shaped photo
+    sets) before spending time on anything user-facing.</p></div>
 
   <div class="q"><span class="id">Q5 · Time</span>
     <p>Realistically, how many hours a week?</p>
     <p>Changes whether the build order above is four weeks or ten. Better to know now and plan
     honestly than to discover it in month two.</p></div>
+  <div class="box">
+    <span class="lbl">Status</span>
+    <p>Still open — not answered yet.</p></div>
 </section>
 
 <footer>
