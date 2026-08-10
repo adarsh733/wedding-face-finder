@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wedding Face Finder — Architecture &amp; Plan</title>
+<style>
+  :root{
+    --bg:#fbfaf8; --panel:#fff; --ink:#1a1917; --muted:#6b6560; --faint:#938c85;
+    --line:#e5e0d9; --accent:#8a5a2b; --accent-soft:#f5ede3;
+    --warn:#a8443a; --warn-soft:#fbeeec; --ok:#3f6b4a; --ok-soft:#edf4ee;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#141312; --panel:#1c1b19; --ink:#eae6e1; --muted:#a39c94; --faint:#7c746c;
+      --line:#2e2b28; --accent:#d09a5e; --accent-soft:#2a231a;
+      --warn:#e08b80; --warn-soft:#2c1e1c; --ok:#8fbf9c; --ok-soft:#1b241d;
+    }
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:840px;margin:0 auto;padding:0 22px 100px}
+
+  /* ---------- header ---------- */
+  header{padding:56px 0 34px;border-bottom:1px solid var(--line);margin-bottom:38px}
+  .kicker{font:600 11px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-bottom:16px}
+  h1{font-size:40px;line-height:1.12;letter-spacing:-.02em;margin:0 0 14px;font-weight:700}
+  .sub{font-size:18px;color:var(--muted);margin:0 0 22px;max-width:60ch}
+  .meta{display:flex;flex-wrap:wrap;gap:10px 20px;font:500 13px var(--mono);color:var(--faint)}
+  .badge{display:inline-block;padding:4px 10px;border-radius:99px;background:var(--accent-soft);color:var(--accent);font:600 12px var(--mono);letter-spacing:.03em}
+
+  /* ---------- toc ---------- */
+  nav.toc{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px 24px;margin-bottom:48px}
+  nav.toc h2{font:600 11px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--faint);margin:0 0 14px}
+  nav.toc ol{margin:0;padding-left:20px;columns:2;column-gap:34px}
+  @media(max-width:620px){nav.toc ol{columns:1}}
+  nav.toc li{margin:5px 0;font-size:14.5px}
+  nav.toc a{color:var(--ink);text-decoration:none;border-bottom:1px solid transparent}
+  nav.toc a:hover{border-bottom-color:var(--accent);color:var(--accent)}
+
+  /* ---------- type ---------- */
+  section{margin-bottom:58px;scroll-margin-top:24px}
+  h2{font-size:15px;font-weight:700;letter-spacing:-.005em;margin:0 0 6px;
+     display:flex;gap:12px;align-items:baseline}
+  h2 .num{font:700 12px var(--mono);color:var(--accent);letter-spacing:.06em}
+  h2 .txt{font-size:26px;line-height:1.25}
+  .lede{color:var(--muted);font-size:16.5px;margin:0 0 24px;max-width:62ch}
+  h3{font-size:17px;font-weight:650;margin:32px 0 10px;letter-spacing:-.01em}
+  p{margin:0 0 15px;max-width:68ch}
+  ul,ol{max-width:68ch;padding-left:22px}
+  li{margin:7px 0}
+  strong{font-weight:650}
+  code{font:500 13.5px var(--mono);background:var(--accent-soft);color:var(--accent);padding:2px 6px;border-radius:5px}
+  hr{border:0;border-top:1px solid var(--line);margin:38px 0}
+
+  /* ---------- callouts ---------- */
+  .box{border:1px solid var(--line);border-left:3px solid var(--accent);background:var(--panel);
+       border-radius:0 10px 10px 0;padding:18px 22px;margin:22px 0}
+  .box .lbl{font:700 10.5px var(--mono);letter-spacing:.13em;text-transform:uppercase;color:var(--accent);display:block;margin-bottom:8px}
+  .box p:last-child{margin-bottom:0}
+  .box.warn{border-left-color:var(--warn);background:var(--warn-soft)}
+  .box.warn .lbl{color:var(--warn)}
+  .box.ok{border-left-color:var(--ok);background:var(--ok-soft)}
+  .box.ok .lbl{color:var(--ok)}
+
+  /* ---------- tables ---------- */
+  .scroll{overflow-x:auto;margin:22px 0;-webkit-overflow-scrolling:touch}
+  table{border-collapse:collapse;width:100%;min-width:520px;font-size:14.5px}
+  th{text-align:left;font:600 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;
+     color:var(--faint);padding:0 14px 9px 0;border-bottom:1px solid var(--line);white-space:nowrap}
+  td{padding:12px 14px 12px 0;border-bottom:1px solid var(--line);vertical-align:top}
+  td:first-child{font-weight:600}
+  tr:last-child td{border-bottom:0}
+  .rec{color:var(--ok);font-weight:700}
+
+  /* ---------- pipeline diagram ---------- */
+  .pipe{display:flex;align-items:stretch;gap:0;margin:30px 0;flex-wrap:wrap}
+  .stage{flex:1 1 130px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 14px;text-align:center}
+  .stage .n{font:700 10px var(--mono);color:var(--accent);letter-spacing:.1em;display:block;margin-bottom:7px}
+  .stage .t{font-weight:650;font-size:15px;display:block;margin-bottom:5px}
+  .stage .d{font-size:12.5px;color:var(--muted);line-height:1.45}
+  .arrow{display:flex;align-items:center;justify-content:center;color:var(--faint);font-size:18px;padding:0 8px;flex:0 0 auto}
+  @media(max-width:640px){
+    .pipe{flex-direction:column}
+    .arrow{padding:6px 0;transform:rotate(90deg)}
+  }
+
+  /* ---------- trace list ---------- */
+  .trace{counter-reset:s;list-style:none;padding:0;margin:20px 0}
+  .trace li{counter-increment:s;position:relative;padding:0 0 16px 42px;margin:0;
+            border-left:1px solid var(--line);padding-top:2px}
+  .trace li:last-child{border-left-color:transparent;padding-bottom:0}
+  .trace li::before{content:counter(s);position:absolute;left:-13px;top:0;
+    width:25px;height:25px;border-radius:50%;background:var(--accent-soft);color:var(--accent);
+    font:700 12px/25px var(--mono);text-align:center;border:1px solid var(--line)}
+  .trace .out{display:block;font:500 12.5px var(--mono);color:var(--faint);margin-top:3px}
+
+  /* ---------- code block ---------- */
+  pre{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+      padding:18px 20px;overflow-x:auto;font:13px/1.6 var(--mono);color:var(--ink);margin:20px 0}
+  pre code{background:none;color:inherit;padding:0;font-size:inherit}
+
+  /* ---------- q list ---------- */
+  .q{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px 22px;margin:14px 0}
+  .q .id{font:700 11px var(--mono);letter-spacing:.1em;color:var(--accent);display:block;margin-bottom:6px}
+  .q p{margin:0;font-size:15px}
+  .q p+p{margin-top:8px;color:var(--muted);font-size:14px}
+
+  footer{border-top:1px solid var(--line);padding-top:26px;color:var(--faint);font-size:13.5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="kicker">Internal · Draft for review</div>
+  <h1>Wedding Face Finder</h1>
+  <p class="sub">Architecture, cost model and build plan. Written for Devesh to review before we
+  write a single line of product code.</p>
+  <div class="meta">
+    <span>10 August 2026</span>
+    <span>·</span>
+    <span>Adarsh &amp; Devesh</span>
+    <span>·</span>
+    <span class="badge">Nothing built yet</span>
+  </div>
+</header>
+
+<nav class="toc">
+  <h2>Contents</h2>
+  <ol>
+    <li><a href="#s1">What we're building</a></li>
+    <li><a href="#s2">The decision that shapes everything</a></li>
+    <li><a href="#s3">The machine, as five boxes</a></li>
+    <li><a href="#s4">Box by box, with alternatives</a></li>
+    <li><a href="#s5">The data model</a></li>
+    <li><a href="#s6">Follow one photo, and one guest</a></li>
+    <li><a href="#s7">What it costs to run</a></li>
+    <li><a href="#s8">Landmines</a></li>
+    <li><a href="#s9">Decisions already locked</a></li>
+    <li><a href="#s10">Build order</a></li>
+    <li><a href="#s11">Who does what</a></li>
+    <li><a href="#s12">Open questions for Devesh</a></li>
+  </ol>
+</nav>
+
+<!-- ============================================ -->
+<section id="s1">
+  <h2><span class="num">01</span><span class="txt">What we're building</span></h2>
+  <p class="lede">One sentence, then everything else is plumbing for it.</p>
+
+  <p>A photographer finishes a wedding. Instead of dumping 4,000 photos into a Drive folder and
+  letting 200 relatives scroll for an hour, they run the folder through us once. We give them
+  <strong>one link</strong>. Any guest opens it, takes a selfie, and instantly sees only the
+  photos they're in.</p>
+
+  <h3>What the photographer experiences</h3>
+  <p>Logs in, points us at a folder, goes to sleep. Wakes up to a link and a page saying
+  <em>"4,102 photos · 68 people found"</em>. Sends the link on WhatsApp. Done.</p>
+
+  <h3>What the aunt experiences</h3>
+  <p>Taps the WhatsApp link on her phone. Sees the full gallery. A button says
+  <em>"Find my photos"</em>. She allows camera, takes one selfie. Three seconds later: 37 photos,
+  all of her. Taps download.</p>
+
+  <div class="box">
+    <span class="lbl">The bar</span>
+    <p>Neither of them ever hears the words <em>embedding</em>, <em>cluster</em> or
+    <em>vector</em>. If either one has to understand anything about how it works, we've failed.</p>
+  </div>
+</section>
+
+<!-- ============================================ -->
+<section id="s2">
+  <h2><span class="num">02</span><span class="txt">The decision that shapes everything</span></h2>
+  <p class="lede">Read this section even if you skip the rest. Every other choice follows from it.</p>
+
+  <p>A wedding is 2,000–5,000 photos at 5–15 MB each — call it <strong>30–70 GB per event</strong>.
+  If we store those, we are dead before customer number one. Storage and bandwidth would cost more
+  than we could plausibly charge, and the cost would recur every month forever.</p>
+
+  <div class="box ok">
+    <span class="lbl">Core rule</span>
+    <p><strong>We never store the originals.</strong> We read each photo once, keep a tiny
+    web-sized copy plus a mathematical fingerprint of each face, and forget the original.
+    The photographer's own Drive stays the source of truth for full-resolution downloads.</p>
+  </div>
+
+  <div class="scroll">
+  <table>
+    <tr><th>Per wedding</th><th>If we stored originals</th><th>What we actually keep</th></tr>
+    <tr><td>Photos</td><td>~50 GB</td><td>~600 MB of 1000px previews</td></tr>
+    <tr><td>Faces</td><td>—</td><td>~400 MB of small crops</td></tr>
+    <tr><td>Fingerprints</td><td>—</td><td>~100 MB of numbers</td></tr>
+    <tr><td><strong>Total</strong></td><td><strong>~50 GB</strong></td><td class="rec"><strong>~1.1 GB</strong></td></tr>
+  </table>
+  </div>
+
+  <p>A 50× reduction. That is the single reason two people with no funding can build this.</p>
+</section>
+
+<!-- ============================================ -->
+<section id="s3">
+  <h2><span class="num">03</span><span class="txt">The machine, as five boxes</span></h2>
+  <p class="lede">A small factory with a conveyor belt.</p>
+
+  <div class="pipe">
+    <div class="stage"><span class="n">01</span><span class="t">Ingest</span>
+      <span class="d">Get photos in without paying to store them</span></div>
+    <div class="arrow">→</div>
+    <div class="stage"><span class="n">02</span><span class="t">Brain</span>
+      <span class="d">Find faces, turn each into a fingerprint, group them</span></div>
+    <div class="arrow">→</div>
+    <div class="stage"><span class="n">03</span><span class="t">Store</span>
+      <span class="d">Keep the small stuff, throw the big stuff away</span></div>
+    <div class="arrow">→</div>
+    <div class="stage"><span class="n">04</span><span class="t">Serve</span>
+      <span class="d">The gallery and the selfie search</span></div>
+    <div class="arrow">→</div>
+    <div class="stage"><span class="n">05</span><span class="t">Money</span>
+      <span class="d">Charge the photographer per event</span></div>
+  </div>
+</section>
+
+<!-- ============================================ -->
+<section id="s4">
+  <h2><span class="num">04</span><span class="txt">Box by box, with alternatives</span></h2>
+  <p class="lede">What each piece is, what we picked, what else exists, and why.</p>
+
+  <h3>Box 1 — Ingest</h3>
+  <p>The job: move 4,000 photos from the photographer to our processor, without us paying to
+  warehouse them.</p>
+  <div class="scroll">
+  <table>
+    <tr><th>Option</th><th>How it feels to the photographer</th><th>Reality</th></tr>
+    <tr>
+      <td class="rec">Browser folder upload ✓</td>
+      <td>Drag a folder onto a web page, leave the tab open</td>
+      <td>Dead simple to build, no external approvals. But 50 GB over an Indian home connection
+      takes hours, and a closed laptop lid kills it. <strong>Chosen for v1.</strong></td>
+    </tr>
+    <tr>
+      <td>Google Drive connect</td>
+      <td>Click "Connect Drive", pick a folder</td>
+      <td>Much better UX, and Google-to-us transfer is fast without using their bandwidth.
+      But it drags in a licensing landmine — see §8.</td>
+    </tr>
+    <tr>
+      <td>Small desktop uploader</td>
+      <td>Install a tiny app, point it at a folder</td>
+      <td>Most robust for huge weddings, resumable. More work. Ship later if customers ask.</td>
+    </tr>
+  </table>
+  </div>
+
+  <h3>Box 2 — The Brain</h3>
+  <p>Four steps, and it's less magic than it sounds.</p>
+  <ul>
+    <li><strong>Detection</strong> — "where are the faces in this photo?" Output: rectangles.
+    A model called SCRFD does it. Fast, and a solved problem.</li>
+    <li><strong>Embedding</strong> — the important one. For each face, a model called ArcFace
+    outputs <strong>512 numbers</strong>. Think GPS coordinates in a 512-dimensional "face space",
+    built so two photos of the <em>same person</em> land close together and two different people
+    land far apart — regardless of lighting, angle or makeup. Those 512 numbers are about 2 KB.
+    That's the fingerprint, and it's all we keep. Comparing two faces is then just measuring the
+    distance between two points: arithmetic, not AI. That's why search is instant.</li>
+    <li><strong>Quality gate</strong> — throw away faces that are too small (under ~50 pixels),
+    too blurry, or turned too far sideways.</li>
+    <li><strong>Clustering</strong> — group the ~40,000 fingerprints from one wedding into
+    ~150 piles, one per person.</li>
+  </ul>
+
+  <div class="box warn">
+    <span class="lbl">Do not skip the quality gate</span>
+    <p>A blurry background head produces a garbage fingerprint, and garbage fingerprints are what
+    make the system show Priya a photo of someone else. <strong>One wrong tag destroys more trust
+    than ten missed photos.</strong> We are deliberately aggressive here, and we accept missing
+    some real faces as the price.</p>
+  </div>
+
+  <p>Clustering is where our actual engineering time goes. Real Indian wedding photos are hostile:
+  heavy makeup, similar outfits, low-light sangeet floors, and a lot of genuinely
+  similar-looking relatives. Expect two or three rounds of tuning, not one.</p>
+
+  <div class="scroll">
+  <table>
+    <tr><th>Alternative</th><th>Verdict</th></tr>
+    <tr><td>AWS Rekognition, Face++, Luxand</td>
+      <td>Roughly ₹0.08–0.80 per image → <strong>₹350–3,500 per wedding</strong> in pure API cost.
+      Kills the margin, and we can't tune the threshold ourselves. Only worth it if §8 forces our hand.</td></tr>
+    <tr><td><code>face_recognition</code> / dlib</td>
+      <td>Far easier to install, noticeably worse on side angles and low light. Fine to prototype, not to sell.</td></tr>
+    <tr><td>Training our own model</td>
+      <td>No. Years of work, and unnecessary — this problem is solved.</td></tr>
+  </table>
+  </div>
+
+  <h3>Box 3 — Store</h3>
+  <div class="scroll">
+  <table>
+    <tr><th>What</th><th>Where</th><th>Per wedding</th></tr>
+    <tr><td>Web previews (~1000px)</td><td>Cloudflare R2</td><td>~600 MB</td></tr>
+    <tr><td>Face crops</td><td>Cloudflare R2</td><td>~400 MB</td></tr>
+    <tr><td>Fingerprints + who-is-in-what</td><td>Supabase (Postgres + <code>pgvector</code>)</td><td>~100 MB</td></tr>
+    <tr><td>Original photos</td><td><strong>Photographer's Drive. Not ours.</strong></td><td>0</td></tr>
+  </table>
+  </div>
+
+  <p><strong>Why Cloudflare R2 and not Amazon S3.</strong> R2 charges nothing for bandwidth out.
+  We are an image product — 200 guests browsing a gallery is a lot of bandwidth. On S3 that's a
+  real bill every month, forever, for every wedding we've ever processed. On R2 it's zero. This
+  one choice is worth more to us long-term than any code we'll write.</p>
+
+  <p><strong>Why Postgres with <code>pgvector</code> and not a dedicated vector database</strong>
+  (Qdrant, Pinecone). At our scale — even 50 weddings — Postgres does vector search perfectly well,
+  and it's the same database already holding users, events and payments. One service instead of two.
+  We add Qdrant when we outgrow Postgres, which would be a very nice problem to have.</p>
+
+  <h3>Box 4 — Serve</h3>
+  <ul>
+    <li><strong>Website</strong> — Next.js. One codebase for both the photographer's dashboard
+    and the guest gallery.</li>
+    <li><strong>Hosting</strong> — Cloudflare Pages. Its free tier permits commercial use;
+    Vercel's free tier does not (§8).</li>
+    <li><strong>Selfie search API</strong> — a small always-on server that takes a selfie,
+    produces a fingerprint, and asks Postgres "which faces are near this point?"</li>
+    <li><strong>Heavy processing</strong> — <strong>our own desktop</strong>, for now. The machine
+    wakes up, asks "any weddings to process?", does the work, uploads results, sleeps. Cost ₹0,
+    no cold starts, no free-tier limits, no Docker on day one. Written as a queue puller so
+    moving it to a rented GPU later is a config change, not a rewrite.</li>
+  </ul>
+
+  <h3>Box 5 — Money</h3>
+  <p>Razorpay, charged per event rather than monthly. Reasoning in §7.</p>
+</section>
+
+<!-- ============================================ -->
+<section id="s5">
+  <h2><span class="num">05</span><span class="txt">The data model</span></h2>
+  <p class="lede">Six tables. That's genuinely all of it.</p>
+
+  <div class="scroll">
+  <table>
+    <tr><th>Table</th><th>One row is…</th><th>Holds</th></tr>
+    <tr><td>photographers</td><td>a customer</td><td>Who's paying</td></tr>
+    <tr><td>events</td><td>one wedding</td><td>Name, date, share link, processing status</td></tr>
+    <tr><td>photos</td><td>one photo</td><td>Filename, preview location, pointer back to the original</td></tr>
+    <tr><td>faces</td><td>one detected face</td><td>Which photo, where in it, the 512 numbers, a quality score</td></tr>
+    <tr><td>people</td><td>one cluster</td><td>"Person 14", later renamed "Priya"; an average fingerprint for the group</td></tr>
+    <tr><td>searches</td><td>one selfie search</td><td>Usage proof and debugging when someone complains</td></tr>
+  </table>
+  </div>
+
+  <p>The core relationship: a <strong>photo</strong> has many <strong>faces</strong>; each
+  <strong>face</strong> belongs to one <strong>person</strong>. "Show me Priya's photos" is one
+  ordinary database query — nothing clever required.</p>
+</section>
+
+<!-- ============================================ -->
+<section id="s6">
+  <h2><span class="num">06</span><span class="txt">Follow one photo, and one guest</span></h2>
+  <p class="lede">The abstract stuff made concrete.</p>
+
+  <h3>One photo, from upload to gallery</h3>
+  <ol class="trace">
+    <li><code>IMG_4821.jpg</code>, 12 MB, arrives at the worker.</li>
+    <li>Shrunk to 1000px wide, uploaded to R2. <span class="out">12 MB → 140 KB · original discarded</span></li>
+    <li>Detector finds 6 faces. Two are blurry background heads. <span class="out">quality gate → 4 survive</span></li>
+    <li>Each of the 4 is cropped and uploaded, then turned into 512 numbers.</li>
+    <li>Four rows written to <code>faces</code>, one to <code>photos</code>.</li>
+    <li>The original 12 MB file is gone from our side — still safe in the photographer's Drive.
+      <span class="out">net: 12 MB in, ~180 KB kept</span></li>
+  </ol>
+
+  <h3>One guest, from selfie to results</h3>
+  <ol class="trace">
+    <li>Aunt taps "Find my photos" and takes a selfie.</li>
+    <li>Selfie goes to our API, becomes 512 numbers, and is <strong>deleted immediately</strong>.
+      <span class="out">we never store guest selfies — and we say so on the page</span></li>
+    <li>Postgres: "every face within distance X of this point, in this event."
+      <span class="out">~80 milliseconds</span></li>
+    <li>We pull those photos' previews from R2 and show them.</li>
+    <li>"Download originals" links straight through to the photographer's Drive.</li>
+  </ol>
+
+  <div class="box">
+    <span class="lbl">Why step 2 matters commercially</span>
+    <p>Telling guests plainly that their selfie is discarded the moment it's converted is the
+    difference between this feeling clever and feeling creepy. It's also most of our compliance
+    story. It goes on the page in plain language, not buried in a privacy policy.</p>
+  </div>
+</section>
+
+<!-- ============================================ -->
+<section id="s7">
+  <h2><span class="num">07</span><span class="txt">What it costs to run</span></h2>
+  <p class="lede">Starting from zero revenue.</p>
+
+  <div class="scroll">
+  <table>
+    <tr><th>Service</th><th>Free allowance</th><th>What that's worth</th><th>Cost after</th></tr>
+    <tr><td>Cloudflare R2</td><td>10 GB stored, <strong>unlimited bandwidth out</strong></td>
+        <td>~8 weddings live at once</td><td>~₹1.50 per wedding per month</td></tr>
+    <tr><td>Supabase</td><td>500 MB database</td><td>~4–5 weddings</td><td>$25/mo covers 100+</td></tr>
+    <tr><td>Cloudflare Pages</td><td>Generous, commercial use allowed</td><td>Plenty</td><td>Free for a long time</td></tr>
+    <tr><td>Processing</td><td>Our own PC</td><td>Unlimited</td><td>₹0</td></tr>
+    <tr><td>Selfie-search server</td><td>Oracle Cloud always-free ARM VM*</td><td>Plenty</td><td>~₹350/mo on a small VPS</td></tr>
+  </table>
+  </div>
+
+  <p style="font-size:14px;color:var(--muted)">* Oracle's free ARM tier is genuinely free and
+  generously sized, but ARM capacity is frequently unavailable in Indian regions and idle accounts
+  have been reclaimed in the past. Treat it as a nice-to-have with a ~₹350/mo VPS as the real plan.</p>
+
+  <div class="box ok">
+    <span class="lbl">Honest total</span>
+    <p>For the first 5–10 weddings: <strong>between ₹0 and about ₹2,000 a month.</strong></p>
+  </div>
+
+  <p>The only thing that pushes us off the free tiers is <em>old weddings we're still storing</em>.
+  Which hands us a natural policy: <strong>galleries stay live for 90 days</strong>, then previews
+  are deleted — the originals were never ours anyway. That caps storage permanently and doubles as
+  our data-retention story for §8.</p>
+
+  <h3>What we charge</h3>
+  <p>Photographers work event to event, not monthly. A subscription asks them to pay in the months
+  they shoot nothing, which is the fastest route to a cancellation. So: <strong>price per event,
+  tiered by photo count</strong> — something like ₹1,500 / ₹3,000 / ₹5,000. Treat those numbers as
+  a hypothesis to test on the first five photographers, not a decision we've made.</p>
+
+  <div class="box warn">
+    <span class="lbl">The real risk in this business</span>
+    <p>The technology is not the risk — face recognition plus clustering is a solved problem.
+    The risk is that <strong>the photographer feels only mild pain here, while the guest feels the
+    real pain — and guests don't buy software.</strong> So which is it: the photographer buys it as
+    a differentiator to win bookings, or the couple buys it as an add-on? Five conversations answers
+    this. Have them before we've built three months of product.</p>
+  </div>
+</section>
+
+<!-- ============================================ -->
+<section id="s8">
+  <h2><span class="num">08</span><span class="txt">Landmines</span></h2>
+  <p class="lede">Invisible until they're suddenly a wall. On the table now, not in month four.</p>
+
+  <div class="box warn">
+    <span class="lbl">1 — Model licensing</span>
+    <p>The InsightFace <em>code</em> is open, but the <strong>pretrained model weights — the
+    actually valuable part — are licensed for non-commercial research use only</strong>, as far as
+    we currently understand it. Fine for building, testing and demoing. Not fine the day someone
+    pays us.</p>
+    <p><strong>Options:</strong> read the current licence text ourselves (it may have changed);
+    switch to a permissively-licensed model with somewhat lower accuracy; or price a commercial API
+    into the unit economics. <strong>Does not block the next two months</strong> — but must be
+    settled before invoice number one.</p>
+  </div>
+
+  <div class="box warn">
+    <span class="lbl">2 — Google Drive permissions</span>
+    <p>The <code>drive.readonly</code> permission is a <strong>restricted scope</strong>. Using it
+    in a public app requires an annual third-party security assessment costing real money —
+    thousands of dollars a year.</p>
+    <p>The way around it is Google's file <strong>Picker</strong> with the narrower
+    <code>drive.file</code> permission, where the photographer explicitly selects the folder and we
+    only ever get access to that. It's a different code path, so it matters that we design for it
+    rather than retrofit. <strong>Deferred for now</strong> — v1 uses browser upload, which sidesteps
+    the whole thing.</p>
+  </div>
+
+  <div class="box warn">
+    <span class="lbl">3 — Biometric data law</span>
+    <p>Face fingerprints are <strong>biometric personal data</strong> under India's DPDP Act.
+    Practically that means: a consent screen for guests, the 90-day deletion policy from §7, a
+    "delete me" button, and clarity in the photographer contract that <em>they</em> are the data
+    fiduciary and <em>we</em> are the processor.</p>
+    <p>An hour with a lawyer before the first paid event. The rules have been shifting, so don't
+    trust anything written a year ago — including this document.</p>
+  </div>
+
+  <div class="box">
+    <span class="lbl">4 — Minor, but real</span>
+    <p>Vercel's free tier prohibits commercial use. Hence Cloudflare Pages. Cheap to get right now,
+    annoying to discover later.</p>
+  </div>
+</section>
+
+<!-- ============================================ -->
+<section id="s9">
+  <h2><span class="num">09</span><span class="txt">Decisions already locked</span></h2>
+  <p class="lede">Adarsh's calls, 10 August. Devesh — push back on any of these.</p>
+
+  <div class="scroll">
+  <table>
+    <tr><th>Decision</th><th>Chosen</th><th>Consequence</th></tr>
+    <tr><td>v1 ingestion</td><td>Browser folder upload</td>
+        <td>No Google approval process blocking our first customer. Drive connect deferred.</td></tr>
+    <tr><td>Where processing runs</td><td>Our own desktop</td>
+        <td>₹0, no limits. Written as a queue puller so a rented GPU is a config change later.</td></tr>
+    <tr><td>Hardware</td><td>No GPU yet — CPU only</td>
+        <td>Forces the pipeline split below. Not a blocker.</td></tr>
+    <tr><td>Test data</td><td>None yet</td>
+        <td><strong>Currently our biggest bottleneck.</strong> See §11.</td></tr>
+  </table>
+  </div>
+
+  <h3>The consequence of CPU-only</h3>
+  <p>On a CPU, fingerprinting a full wedding takes roughly <strong>one to two hours</strong>. Fine
+  overnight. Completely unworkable when you want to try ten clustering variations in an afternoon.
+  So the pipeline is split in two, permanently:</p>
+
+<pre><code>STAGE 1 — expensive, runs ONCE per wedding, cached to disk
+  photos → detect faces → quality gate → 512-number fingerprints → faces.parquet
+
+STAGE 2 — cheap, re-runs in seconds, unlimited times
+  faces.parquet → cluster → evaluate → report</code></pre>
+
+  <p>Stage 1 runs overnight. After that every clustering experiment reads the cached file and
+  finishes in about five seconds — a hundred tuning iterations a day on a laptop. <strong>This one
+  split is what makes "no GPU" a non-issue</strong>, and it's the right design anyway: a GPU later
+  just makes stage 1 faster without changing anything else.</p>
+</section>
+
+<!-- ============================================ -->
+<section id="s10">
+  <h2><span class="num">10</span><span class="txt">Build order</span></h2>
+  <p class="lede">Weeks 1–2 have no user interface on purpose.</p>
+
+  <div class="scroll">
+  <table>
+    <tr><th>When</th><th>What</th><th>"Done" means</th></tr>
+    <tr><td>Week 1–2</td><td>Local scripts only. Folder in → face clusters out. No website at all.</td>
+        <td>On a real wedding, ≥90% of one person's faces land in a single pile, with near-zero
+        wrong faces mixed in.</td></tr>
+    <tr><td>Week 3–4</td><td>Shareable gallery link + selfie search. Ugly is fine.</td>
+        <td>We can WhatsApp a link to Adarsh's mother and she finds her photos unaided.</td></tr>
+    <tr><td>Month 2</td><td>Photographer login, upload flow, downloads, consent + deletion.</td>
+        <td>A photographer can use it without either of us in the room.</td></tr>
+    <tr><td>Month 3</td><td>Five photographers, free, in exchange for their data and brutal
+        feedback. Payments last.</td>
+        <td>We know who pays, and how much.</td></tr>
+  </table>
+  </div>
+
+  <p>If the clustering doesn't work, a beautiful gallery is worthless. And if it does work,
+  everything after it is ordinary web development. So we find out first.</p>
+
+  <h3>The first three things that get written</h3>
+  <ol>
+    <li><strong>A script, no UI.</strong> Point it at a folder on disk. It walks every image,
+    detects faces, discards the bad ones, writes fingerprints to a cache file, and saves face crops
+    so we can <em>see</em> what it found.</li>
+    <li><strong>The clustering script.</strong> Reads the cache, groups the faces, and produces an
+    HTML page — "Person 1 — 84 photos" with a thumbnail grid under each. We scroll it and count the
+    mistakes by eye. That page is our accuracy meter, and we'll be staring at it for two weeks.</li>
+    <li><strong>Tune</strong> against real photos until the piles are clean.</li>
+  </ol>
+  <p>No database, no cloud, no login, no upload until week 3.</p>
+</section>
+
+<!-- ============================================ -->
+<section id="s11">
+  <h2><span class="num">11</span><span class="txt">Who does what</span></h2>
+  <p class="lede">Claude writes every line of code. That frees the two of us for what it can't do.</p>
+
+  <div class="scroll">
+  <table>
+    <tr><th>Who</th><th>Owns</th></tr>
+    <tr><td>Adarsh</td><td>Product calls, the five photographer conversations, pricing — and the one
+      job that genuinely can't be outsourced: <strong>getting real wedding photo sets to test on.</strong></td></tr>
+    <tr><td>Devesh</td><td>Runs the processing machine, and does the human accuracy testing: take
+      200 photos, check by eye how many the system got right and wrong. Tedious, essential, and the
+      only honest measure of whether this works.</td></tr>
+    <tr><td>Claude</td><td>All code, all infrastructure, all tuning.</td></tr>
+  </table>
+  </div>
+
+  <div class="box warn">
+    <span class="lbl">The current bottleneck</span>
+    <p>Clustering quality <em>is</em> the product, and it cannot be tuned against imaginary photos.
+    We need roughly <strong>one real wedding, or ~500 photos of a group of 20-ish recurring
+    people</strong>, before any tuning work means anything. Everything before that can be built
+    blind — but not for long.</p>
+  </div>
+
+  <p>Three sources, in order of value:</p>
+  <ol>
+    <li><strong>Ask a photographer friend for one wedding folder now.</strong> Offer free processing
+    forever in exchange. This is simultaneously our test data <em>and</em> our first sales
+    conversation — we'll learn whether they even feel the pain, which is the real question from §7.</li>
+    <li><strong>Our own phone galleries.</strong> Family functions, group shots, the same people
+    across years and lighting conditions. Genuinely useful — same problem shape, smaller.</li>
+    <li>Public face datasets — only useful for confirming the fingerprinting works at all. They're
+    cropped celebrity headshots, nothing like a sangeet floor. Don't tune on them.</li>
+  </ol>
+</section>
+
+<!-- ============================================ -->
+<section id="s12">
+  <h2><span class="num">12</span><span class="txt">Open questions for Devesh</span></h2>
+  <p class="lede">Reply by number — these are the things that change what gets written first.</p>
+
+  <div class="q"><span class="id">Q1 · Hardware</span>
+    <p>Do you have, or can you get access to, any machine with an NVIDIA graphics card?</p>
+    <p>Not a blocker — but it turns a two-hour processing run into fifteen minutes, which matters a
+    lot in the weeks where we're re-running things daily.</p></div>
+
+  <div class="q"><span class="id">Q2 · Test photos</span>
+    <p>How many photos can you assemble this week, and do you know any wedding photographer even
+    loosely?</p>
+    <p>Even a few hundred family-function photos lets us verify the pipeline end to end while we
+    chase a real wedding folder.</p></div>
+
+  <div class="q"><span class="id">Q3 · Who pays</span>
+    <p>Read §7's risk box. Your instinct: does the photographer buy this, or the couple?</p>
+    <p>We should each write an answer down before we start asking people, so we can tell later
+    whether we were right or just persuaded ourselves.</p></div>
+
+  <div class="q"><span class="id">Q4 · Anything here you'd build differently</span>
+    <p>Specifically §4 (R2 vs S3, Postgres vs a vector database) and §10's "no UI for two weeks".</p>
+    <p>The second one is the one people usually argue with. Now is the cheap time to argue.</p></div>
+
+  <div class="q"><span class="id">Q5 · Time</span>
+    <p>Realistically, how many hours a week?</p>
+    <p>Changes whether the build order above is four weeks or ten. Better to know now and plan
+    honestly than to discover it in month two.</p></div>
+</section>
+
+<footer>
+  <p>Draft 1 · 10 August 2026 · Nothing has been built yet — this document exists so we disagree
+  before writing code rather than after.<br>
+  Numbers marked "roughly" are estimates and should be re-checked against current provider pricing
+  before anyone relies on them. The three landmines in §8 are unverified and need confirming
+  independently.</p>
+</footer>
+
+</div>
+</body>
+</html>
