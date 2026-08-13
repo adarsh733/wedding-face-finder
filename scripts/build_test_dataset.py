@@ -31,6 +31,13 @@ import urllib.request
 from pathlib import Path
 
 COMMONS_API = "https://commons.wikimedia.org/w/api.php"
+
+# Download rendered thumbnails at this width rather than multi-megabyte
+# originals. Commons throttles original downloads aggressively; thumbnails come
+# off the cache. 1600px still leaves faces far larger than the 112px ArcFace
+# needs, so nothing this dataset can test is lost -- and per docs/ARCHITECTURE.md
+# these cropped press photos could never test the resolution work anyway.
+THUMB_WIDTH = 1600
 USER_AGENT = "wedding-face-finder-test-dataset/1.0 (internal test data script, non-commercial testing)"
 
 DEFAULT_PLAYERS = [
@@ -44,12 +51,40 @@ SKIP_PATTERNS = re.compile(r"(logo|flag|signature|coa|crest|map|icon|stamp|graph
 ALLOWED_EXT = {".jpg", ".jpeg", ".png"}
 
 
-def api_get(params):
+def api_get(params, retries=5):
+    """Query the Commons API, backing off when throttled.
+
+    Commons rate-limits the API itself, not just file downloads. Without this
+    retry a single 429 raised straight out of here and killed an entire
+    multi-player run -- losing every player after the one that tripped it.
+    """
     params = {**params, "format": "json"}
     url = COMMONS_API + "?" + urllib.parse.urlencode(params)
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.load(resp)
+    delay = 2.0
+    for attempt in range(retries):
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                return json.load(resp)
+        except urllib.error.HTTPError as e:
+            if e.code in (429, 503) and attempt < retries - 1:
+                # Honour Retry-After when Commons sends one.
+                wait = e.headers.get("Retry-After") if e.headers else None
+                try:
+                    wait = float(wait)
+                except (TypeError, ValueError):
+                    wait = delay
+                print(f"  API throttled ({e.code}), waiting {wait:.0f}s...")
+                time.sleep(min(wait, 120))
+                delay = min(delay * 2, 120)
+                continue
+            raise
+        except (urllib.error.URLError, TimeoutError):
+            if attempt < retries - 1:
+                time.sleep(delay)
+                delay = min(delay * 2, 120)
+                continue
+            raise
 
 
 def find_category(player, sleep):
@@ -102,6 +137,12 @@ def fetch_image_info(titles, sleep):
         data = api_get({
             "action": "query", "titles": "|".join(batch), "prop": "imageinfo",
             "iiprop": "url|size|extmetadata",
+            # Ask for a rendered thumbnail alongside the original. Commons
+            # rate-limits (HTTP 429) full-size downloads from upload.wikimedia.org
+            # hard enough that a 100-image run mostly fails; its own 429 body
+            # tells you to use thumbnails instead. Thumbnails are cached and
+            # served without throttling.
+            "iiurlwidth": THUMB_WIDTH,
         })
         for page in data.get("query", {}).get("pages", {}).values():
             infos = page.get("imageinfo")
@@ -111,6 +152,9 @@ def fetch_image_info(titles, sleep):
             license_short = info.get("extmetadata", {}).get("LicenseShortName", {}).get("value", "unknown")
             out[page["title"]] = {
                 "url": info["url"],
+                "thumb_url": info.get("thumburl"),
+                "thumb_width": info.get("thumbwidth", 0),
+                "thumb_height": info.get("thumbheight", 0),
                 "width": info.get("width", 0),
                 "height": info.get("height", 0),
                 "license": license_short,
@@ -163,10 +207,14 @@ def build_for_player(player, out_dir, per_player, min_side, sleep):
         info = infos.get(title)
         if not info or info["width"] < min_side or info["height"] < min_side:
             continue
-        ext = Path(title).suffix.lower()
+        # Prefer the cached thumbnail; fall back to the original only if
+        # Commons did not render one (e.g. an unusual format).
+        fetch_url = info.get("thumb_url") or info["url"]
+        # Thumbnails are always rendered as .jpg regardless of the source format.
+        ext = ".jpg" if info.get("thumb_url") else Path(title).suffix.lower()
         dest = player_dir / f"{kept:03d}{ext}"
         try:
-            download(info["url"], dest)
+            download(fetch_url, dest)
         except (urllib.error.URLError, TimeoutError) as e:
             print(f"[{player}] failed to download {title}: {e}")
             continue
@@ -202,7 +250,15 @@ def main():
 
     all_rows = []
     for player in players:
-        all_rows.extend(build_for_player(player, out_dir, args.per_player, args.min_side, args.sleep))
+        # One player failing must not cost every player after them. A long run
+        # is expensive to restart, and Commons throttling is unpredictable.
+        try:
+            all_rows.extend(
+                build_for_player(player, out_dir, args.per_player, args.min_side, args.sleep)
+            )
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            print(f"[{player}] giving up on this player: {e}")
+            continue
 
     manifest_path = out_dir / "manifest.csv"
     with manifest_path.open("w", newline="") as f:

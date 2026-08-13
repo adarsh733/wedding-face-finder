@@ -1,3 +1,27 @@
 test-data/
 __pycache__/
 *.pyc
+
+# The local object store, behind r2:// URIs. NONE of it is committed.
+#
+# There was a plan to commit the light half of it -- crops, journals, parquets,
+# ~9 MB per folder -- so a `git pull` would reproduce the whole review panel on
+# the other person's machine with no server and no cloud account. That plan
+# assumed a PRIVATE repo. This repo is public, so it is off.
+#
+# Face crops and embeddings are biometric data under India's DPDP Act. On a
+# public repo that means real people's faces, permanently, indexed. Not worth
+# saving one person a 10-minute setup.
+#
+# If this ever moves to a private repo and sharing the panel matters again, the
+# rule to restore is: exclude prev/, thumb/, *.f32 and generated *.html (98% of
+# the bytes, and the panel asks for none of them -- measured), commit the rest.
+.wff-store/
+
+# The Google API key, if this checkout keeps its own. The one on this machine
+# lives in ~/.wff/settings.env, outside the repo entirely.
+.env
+
+.pytest_cache/
+.venv/
+venv/

@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}{{ event.event_id }} — same or different?{% endblock %}
+{% block wrapclass %}narrow{% endblock %}
+
+{% block nav %}
+<nav>
+  <a class="btn ghost" href="{{ url_for('event_page', event_id=event.event_id) }}?{{ cluster_query(settings) }}">← Back to review</a>
+</nav>
+{% endblock %}
+
+{% block body %}
+<section>
+  <div class="section-head">
+    <h1>Same person, or not?</h1>
+    <span class="hint">Two seconds each. These are the ones the machine is least sure about.</span>
+  </div>
+
+  <div class="callout info">
+    <strong>Why these pairs.</strong> Nothing here is random. Every pair sits close to
+    the line where the machine decides “same person” — so your answer actually
+    moves the setting. Obvious pairs teach it nothing.
+  </div>
+
+  <div class="callout {{ 'warn' if evidence.overlap else 'info' }}" id="threshold-advice">
+    <strong>Where the line should sit:</strong> {{ evidence.summary() }}
+  </div>
+</section>
+
+{% if pairs %}
+<section id="judge" data-event="{{ event.event_id }}">
+  <div class="panel">
+    <div class="row" style="margin-bottom:4px">
+      <span class="small muted" id="judge-progress">Pair <span id="judge-index">1</span> of {{ pairs|length }}</span>
+      <span class="spacer" style="flex:1"></span>
+      <span class="small muted">
+        The machine says: <strong id="judge-guess"></strong>
+        <span class="mono" id="judge-distance" title="How far apart these two piles sit on average. The merge setting compares this number."></span>
+      </span>
+    </div>
+    <div class="progress"><span id="judge-bar" style="width:0%"></span></div>
+
+    <div class="judge-pair">
+      <div class="judge-face">
+        <img id="judge-a" alt="First face" width="260" height="260">
+        <div class="cap" id="judge-a-cap"></div>
+      </div>
+      <div class="judge-vs">vs</div>
+      <div class="judge-face">
+        <img id="judge-b" alt="Second face" width="260" height="260">
+        <div class="cap" id="judge-b-cap"></div>
+      </div>
+    </div>
+
+    <div class="judge-actions">
+      <button class="btn big ok" data-judge="same">Same person <span class="kbd">S</span></button>
+      <button class="btn big danger" data-judge="different">Different people <span class="kbd">D</span></button>
+      <button class="btn big ghost" data-judge="skip">Can’t tell <span class="kbd">Space</span></button>
+    </div>
+    <p class="small muted" style="text-align:center; margin:14px 0 0">
+      Click either face to see the whole photo it came from — often the only way to be sure.
+    </p>
+  </div>
+
+  <div class="panel" style="margin-top:16px" id="judge-done" hidden>
+    <h3>That’s all of them.</h3>
+    <p class="small muted" id="judge-summary" style="margin-bottom:12px"></p>
+    <a class="btn primary" href="{{ url_for('event_page', event_id=event.event_id) }}?{{ cluster_query(settings) }}">Back to the piles</a>
+    <a class="btn" href="{{ url_for('judge_page', event_id=event.event_id) }}?{{ cluster_query(settings) }}">Load more pairs</a>
+  </div>
+</section>
+
+<script id="judge-data" type="application/json">{{ pairs|tojson }}</script>
+{% else %}
+<section>
+  <div class="panel muted">
+    <p style="margin-top:0">Nothing borderline left to judge at these settings — every pair
+    of piles is either obviously the same or obviously different.</p>
+    <p style="margin-bottom:0">That is a good sign, but it also means the piles themselves are
+    what needs checking now. <a href="{{ url_for('event_page', event_id=event.event_id) }}?{{ cluster_query(settings) }}">Go back and scan them.</a></p>
+  </div>
+</section>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  window.WFF = {
+    eventId: {{ event.event_id|tojson }},
+    query: {{ cluster_query(settings)|tojson }},
+    judge: true
+  };
+</script>
+{% endblock %}

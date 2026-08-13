@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Face Finder — admin panel{% endblock %}</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='7' cy='7' r='5' fill='none' stroke='%234b3f9e' stroke-width='2'/><path d='M11 11l4 4' stroke='%234b3f9e' stroke-width='2' stroke-linecap='round'/></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Fira+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body>
+{% block chrome %}
+<header class="topbar">
+  <a class="brand" href="{{ url_for('home') }}">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+      <circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/>
+    </svg>
+    Face Finder <span class="muted small">admin panel</span>
+  </a>
+  {% block nav %}{% endblock %}
+  <span class="spacer"></span>
+  <span class="hdr-id">
+    <span class="muted small">Testing as</span>
+    <span class="who"><span class="av" id="id-avatar">?</span><b id="id-name">…</b></span>
+    <button type="button" data-switch-identity>switch</button>
+  </span>
+  {# The name travels on every judgement. Kept as a hidden input rather than a
+     visible text box so it cannot be half-typed when a click is recorded. #}
+  <input type="hidden" id="reviewer" value="">
+</header>
+{% endblock %}
+
+{% block main %}
+<main class="wrap {% block wrapclass %}{% endblock %}">
+{% block body %}{% endblock %}
+</main>
+{% endblock %}
+
+<div class="idask" id="idask" role="dialog" aria-modal="true" aria-labelledby="idask-title">
+  <div class="idask-box">
+    <h2 id="idask-title">Who’s testing today?</h2>
+    <p>
+      Your name goes on every run you start and every judgement you make, so
+      “who tested what” always has an answer.
+    </p>
+    <div class="idask-btns">
+      <button class="btn primary" type="button" data-identity="Adarsh">Adarsh</button>
+      <button class="btn primary" type="button" data-identity="Devesh">Devesh</button>
+    </div>
+    <div class="idask-other">
+      <input type="text" id="idask-other" placeholder="someone else" autocomplete="off" maxlength="40">
+      <button class="btn" type="button" data-identity-other>Use this name</button>
+    </div>
+    <p class="small muted" style="margin:16px 0 0">Remembered on this computer until you switch.</p>
+  </div>
+</div>
+
+<div class="modal" id="photo-modal" role="dialog" aria-modal="true" aria-label="Original photo">
+  <div class="modal-box">
+    <div class="modal-head">
+      <strong id="photo-title">Photo</strong>
+      <span class="path" id="photo-path"></span>
+      <span class="spacer" style="flex:1"></span>
+      <button class="btn ghost" data-close-modal aria-label="Close">Close ✕</button>
+    </div>
+    <div class="photo-frame" id="photo-frame"></div>
+    <p class="small muted" style="margin:12px 0 0" id="photo-note"></p>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+{# Page data FIRST: app.js reads window.WFF as it initialises, so defining it
+   afterwards would leave every request pointing at "undefined". #}
+{% block scripts %}{% endblock %}
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

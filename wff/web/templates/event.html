@@ -1,0 +1,566 @@
+{% extends "base.html" %}
+{% block title %}{{ event.name }} — review{% endblock %}
+
+{% block nav %}
+<nav>
+  <a class="btn ghost" href="{{ url_for('home') }}">← All runs</a>
+</nav>
+{% endblock %}
+
+{# Full-bleed, like the home page: the band runs edge to edge and the review
+   splits into a scrolling gallery with a docked panel beside it. #}
+{% block main %}
+
+{# ==================================================================== band #}
+<section class="band tight">
+  <div class="band-top" style="margin-bottom:0">
+    <div>
+      <div class="name">{{ event.name }}</div>
+      <div class="sub">
+        {{ "{:,}".format(event.processed) }} of {{ "{:,}".format(event.photo_count) }} photos processed
+        {%- if event.source_type %} · {{ event.source_type }}{% endif %}
+        {%- if ready %} · {{ "{:,}".format(output.faces|length) }} faces used · {{ people_total }} people{% endif %}
+        {%- if event.failed %} · <span class="pill red">{{ event.failed }} failed</span>{% endif %}
+        · nothing left this machine
+      </div>
+    </div>
+  </div>
+</section>
+
+{# ============================================================ while it runs #}
+{% if job and not job.finished %}
+<section class="live" id="live" data-event="{{ event.event_id }}" data-job="{{ job.job_id }}">
+  <div class="live-head">
+    <div>
+      <h2>Reading the photos</h2>
+      <p class="cap" id="live-message">{{ job.message }}</p>
+    </div>
+    <span class="spacer" style="flex:1"></span>
+    <span class="phase" id="job-phase"><span class="dot"></span><span id="job-phase-text">{{ job.phase }}</span></span>
+    <button class="btn danger" id="job-stop">Stop</button>
+  </div>
+
+  <div class="bignums live-nums">
+    <div>
+      <div class="v"><span id="live-done">{{ "{:,}".format(job.photos_done) }}</span><small> / {{ "{:,}".format(job.photos_total) }}</small></div>
+      <div class="k">photos looked at</div>
+      <div class="d" id="live-eta">{{ job.percent }}% done</div>
+    </div>
+    <div>
+      <div class="v" id="live-detected">{{ "{:,}".format(live.totals.detected) }}</div>
+      <div class="k">faces found so far</div>
+      <div class="d"><span id="live-accepted">{{ "{:,}".format(live.totals.accepted) }}</span> clear enough to use</div>
+    </div>
+    <div>
+      <div class="v" id="live-rate">{{ "%.1f"|format(job.seconds_per_photo) if job.seconds_per_photo else "—" }}<small>s</small></div>
+      <div class="k">per photo</div>
+      <div class="d">measured on this run</div>
+    </div>
+    <div>
+      <div class="v" id="live-usable">{{ live.totals.usable_pct|int }}<small>%</small></div>
+      <div class="k">of faces are usable</div>
+      <div class="d"><span id="live-small">{{ live.totals.too_small }}</span> too small to be reliable</div>
+    </div>
+  </div>
+
+  <div class="progress" style="margin:18px 0 4px"><span id="job-bar" style="width: {{ job.percent }}%"></span></div>
+
+  <div class="live-grid">
+    <div>
+      <h3>What it’s doing</h3>
+      <div class="steps" id="live-steps">
+        {% for step in live.steps %}
+        <div class="step {{ step.state }}">
+          <span class="mark">{% if step.state == 'done' %}✓{% elif step.state == 'now' %}›{% elif step.state == 'failed' %}!{% else %}{{ loop.index }}{% endif %}</span>
+          <div>
+            <div class="t">{{ step.title }}</div>
+            <div class="d">{{ step.detail }}</div>
+            {% if step.percent is defined %}
+            <div class="progress thin" style="margin-top:8px"><span style="width: {{ step.percent }}%"></span></div>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+
+      <div class="callout info" style="margin-top:16px">
+        Safe to close this tab — it keeps running. Stopping keeps everything done so
+        far, and running the same folder again carries on from there.
+      </div>
+
+      <details class="drawer" style="margin-top:14px">
+        <summary>The raw log, if you want it</summary>
+        <div class="joblog" id="job-log">{{ job.log|join("\n") }}</div>
+      </details>
+    </div>
+
+    <div>
+      <div class="row" style="align-items:baseline">
+        <h3>Faces as they’re found</h3>
+        <span class="muted small">Newest first. Grouping into people happens at the end.</span>
+        <span style="flex:1"></span>
+        <span class="pill amber">orange = small, under 112px</span>
+      </div>
+      <div class="facewall" id="live-faces">
+        {% for face in live.faces %}
+        <div class="fc {{ 'small' if face.small }}" data-face="{{ face.face_id }}">
+          <img loading="lazy" width="72" height="72" src="{{ face.url }}" alt="">
+          <span class="px">{{ face.height_px }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      <p class="small muted" id="live-empty" {% if live.faces %}hidden{% endif %}>
+        Nothing yet — the first faces appear a few seconds after the recogniser wakes up.
+      </p>
+      <div class="livecards">
+        <div class="panel">
+          <div class="lbl">Photos with nobody in them</div>
+          <p class="small muted" style="margin:6px 0 0">
+            <b id="live-nofaces">{{ live.totals.photos_without_faces }}</b> so far — decorations,
+            food, the venue. Normal.
+          </p>
+        </div>
+        <div class="panel">
+          <div class="lbl">Most faces in one photo</div>
+          <p class="small muted" style="margin:6px 0 0">
+            <b id="live-biggest">{{ live.totals.biggest_photo }}</b>. Crowd shots are the case
+            the whole design exists for.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+{% elif job and job.phase == 'failed' %}
+<div class="wrap"><div class="callout alarm"><strong>That run failed.</strong>
+  {#- pre-wrap: a failure that tells you how to fix it does it in steps, and
+      HTML would otherwise collapse them into one paragraph. -#}
+  <span class="steps">{{ job.error }}</span>
+  {% if job.source_type == 'gdrive' %}
+  {# One button beats a printed instruction: it carries the link back to the
+     home page with the key box already open, so nothing is re-typed. #}
+  <p style="margin:12px 0 0">
+    <a class="btn primary" href="{{ url_for('home', need_key='1', link=job.link, event_id=job.event_id) }}">Set up Google Drive</a>
+  </p>
+  {% endif %}</div>
+<div class="joblog">{{ job.log|join("\n") }}</div></div>
+{% elif job and job.phase == 'stopped' %}
+<div class="wrap"><div class="callout warn"><strong>Stopped.</strong> {{ job.message }}</div></div>
+{% endif %}
+
+{% if not ready %}
+<div class="wrap">
+  <div class="panel muted">
+    No faces cached for this run yet.
+    {% if not job %}Nothing has processed it — start it from the <a href="{{ url_for('home') }}">home page</a>.{% else %}This page fills in as soon as step 1 finishes.{% endif %}
+  </div>
+</div>
+{% else %}
+
+{# ================================================= the piles, and the window
+   Layout R1. The page is a status board: how much is checked, and the piles.
+   The checking itself happens in a window that shows one pile and asks one
+   question -- because the old page put the question, the answer key, the
+   score, the settings and 1,182 crops on one screen and expected somebody to
+   hold all of it in their head. #}
+<div class="review" id="people" data-event="{{ event.event_id }}">
+
+  <div class="review-top">
+    <h2 data-role="name">{{ event.name }}</h2>
+    <button type="button" class="iconbtn" data-action="rename" title="Rename this run">✎</button>
+    <span class="muted" style="font-size:15px">
+      {{ people_total }} pile{{ '' if people_total == 1 else 's' }} ·
+      {{ "{:,}".format(output.faces|length) }} faces used
+      {%- if leftovers %} · {{ "{:,}".format(leftovers|length) }} in no pile{% endif %}
+    </span>
+    <span style="flex:1"></span>
+    <details class="menu">
+      <summary class="btn ghost" title="More">•••</summary>
+      <div class="menu-box">
+        <a href="{{ url_for('judge_page', event_id=event.event_id) }}?{{ cluster_query(settings) }}">
+          Quick check on tricky pairs
+          <em>Two faces at a time, about 30 seconds. Optional.</em>
+        </a>
+        <a href="{{ url_for('export_feedback', event_id=event.event_id) }}">
+          Send my answers to Devesh
+          <em>Downloads one file. You each run your own copy, so this is how the two sets get merged.</em>
+        </a>
+        <a href="#" data-action="note">
+          Leave a note about this run
+          <em>Anything the buttons can’t say. Shows at the bottom of this page.</em>
+        </a>
+        {% if not expert %}
+        <a href="?{{ cluster_query(settings) }}&expert=1">
+          Manual grouping controls
+          <em>Diagnostics for us. Nothing on this page needs them.</em>
+        </a>
+        {% endif %}
+      </div>
+    </details>
+  </div>
+
+  {# ------------------------------------------------------- how far along #}
+  <section class="revbar {% if progress.done %}is-done{% endif %}" id="revbar">
+    <div class="pct">
+      <b id="rv-pct">{{ progress.percent }}</b><span>%</span>
+      <em>checked by you</em>
+    </div>
+    <div class="grow">
+      <div class="progress thick"><span id="rv-fill" style="width: {{ progress.percent }}%"></span></div>
+      <p class="cap" id="rv-line">
+        {% if progress.piles_answered %}
+          {{ progress.piles_answered }} of {{ progress.piles_total }} piles answered ·
+          {{ progress.faces_fixed }} face{{ '' if progress.faces_fixed == 1 else 's' }} fixed
+        {% else %}
+          Nothing checked yet. One question per pile, about 10 seconds each.
+        {% endif %}
+      </p>
+    </div>
+    <button class="btn primary big" id="rv-start" type="button">
+      {% if progress.done %}Look through them again{% elif progress.piles_answered %}Carry on ({{ progress.remaining }} left){% else %}Start checking{% endif %}
+    </button>
+  </section>
+
+  {# ------------------------------------------------------------ the piles #}
+  <div class="row" style="align-items:baseline; margin:6px 0 2px">
+    <h3>The people it found</h3>
+    <span class="muted small">
+      biggest first{% if pages > 1 %} · page {{ page }} of {{ pages }}{% endif %} ·
+      click a pile to check it
+    </span>
+    <span style="flex:1"></span>
+    {# Replaces the "orange edge = small face" legend. A colour with no label
+       is a puzzle; this is the same fact as a thing you can do. #}
+    <button type="button" class="btn small-btn" id="risky-toggle"
+            title="Faces under 112px tall in the original — where nearly every mistake is">
+      Show the risky ones
+    </button>
+  </div>
+
+  <div class="piles" id="piles">
+    {% for person in people %}
+    <article class="pile {% if person.approved_by %}approved{% endif %} {% if person.contaminated %}contaminated{% endif %}"
+             id="p{{ person.person_id }}"
+             data-person="{{ person.person_id }}"
+             data-label="{{ person.label }}"
+             data-count="{{ person.face_count }}"
+             data-photos="{{ person.photo_count }}"
+             data-answered="{{ 1 if person.person_id in progress.answered_ids else 0 }}"
+             data-record="{{ person.approved_record }}">
+      <header class="pile-head">
+        <span class="tick" aria-hidden="true"></span>
+        <h4>{{ person.label }}</h4>
+        <span class="meta">{{ person.face_count }} faces · {{ person.photo_count }} photos</span>
+        {% if person.contaminated %}
+        <span class="pill red">two people mixed: {{ person.contamination_note }}</span>
+        {% endif %}
+        <span style="flex:1"></span>
+        {# The two-step "this pile is the same person as that one" survives from
+           the old page, but it is a hover action on the card instead of a
+           permanent button: it is used once or twice per folder, and it was
+           sitting beside the one button that gets used twenty times. #}
+        <button type="button" class="btn tiny ghost pile-merge" data-action="merge-start"
+                title="This person also has another pile">Same as another pile</button>
+        <button type="button" class="btn tiny merge-target" data-action="merge-finish" hidden>It’s this person</button>
+        <button type="button" class="btn tiny assign-target" data-action="assign-finish" hidden>It’s this person</button>
+        <span class="pile-state"></span>
+      </header>
+
+      <div class="grid">
+        {% for face in person.faces %}
+        <div class="face {% if face.height_px < 112 %}risky{% endif %} {% if face.is_alien %}alien{% endif %} {% if face.flagged %}flagged{% endif %} {% if face.not_a_face %}notface{% endif %}"
+             data-face="{{ face.face_id }}" data-photo="{{ face.photo_id }}"
+             data-record="{{ face.flag_record }}"
+             title="{{ face.photo_path }} — {{ face.height_px }}px tall in the original">
+          <img loading="lazy" width="84" height="84"
+               src="{{ url_for('image', event_id=event.event_id, kind='crop', name=face.face_id) }}"
+               alt="Face {{ face.face_index + 1 }} from photo {{ face.photo_id }}">
+          <span class="px">{{ face.height_px }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      <div class="pile-foot"><span class="more"></span></div>
+    </article>
+    {% endfor %}
+  </div>
+
+  {% if pages > 1 %}
+  <div class="pager">
+    {% if page > 1 %}<a class="btn" href="?{{ cluster_query(settings) }}&page={{ page - 1 }}&per={{ per_page }}">← Previous</a>{% endif %}
+    <span class="small muted">page {{ page }} of {{ pages }} · {{ people_total }} people</span>
+    {% if page < pages %}<a class="btn" href="?{{ cluster_query(settings) }}&page={{ page + 1 }}&per={{ per_page }}">Next →</a>{% endif %}
+    <a class="btn ghost" href="?{{ cluster_query(settings) }}&per=100000">Show all on one page</a>
+  </div>
+  {% endif %}
+
+  {# --------------------------------------------- everything else, quietly #}
+  <section id="leftovers" class="quiet">
+    {% if leftovers %}
+    <details class="drawer">
+      <summary>
+        Faces in no pile
+        <span class="muted small">{{ "{:,}".format(leftovers|length) }} of them</span>
+      </summary>
+      <p class="small muted" style="margin:0 0 12px">
+        Kept on purpose, not lost. Someone who appears in only two photos doesn’t get
+        their own pile, but a selfie still finds them. If you recognise one, say who it
+        belongs to.
+      </p>
+      <div class="grid" id="leftover-grid">
+        {% for face in leftovers %}
+        <div class="face {% if face.height_px < 112 %}risky{% endif %} {% if face.flagged %}flagged{% endif %} {% if face.not_a_face %}notface{% endif %} {% if face.truth_label %}judged{% endif %}"
+             data-face="{{ face.face_id }}" data-photo="{{ face.photo_id }}" data-leftover="1"
+             title="{{ face.photo_path }} — {{ face.height_px }}px tall in the original">
+          <img loading="lazy" width="84" height="84"
+               src="{{ url_for('image', event_id=event.event_id, kind='crop', name=face.face_id) }}"
+               alt="Unassigned face from photo {{ face.photo_id }}">
+          <span class="px">{{ face.height_px }}</span>
+          <div class="tools">
+            {% if face.flagged or face.not_a_face %}
+            <button class="undo" data-action="undo" data-record="{{ face.flag_record }}">undo</button>
+            {% else %}
+            <button class="assign" data-action="assign-start" title="This belongs to one of the people above">who is this?</button>
+            <button data-action="not-a-face" title="Not a face at all">not a face</button>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </details>
+    {% endif %}
+
+    {# --------------------------------------------------------- drawers #}
+      <details class="drawer" id="setaside">
+        <summary>
+          Faces it couldn’t use, and why
+          <span class="muted small">{{ "{:,}".format(output.faces.rejected_count) }} set aside</span>
+        </summary>
+        <p class="small muted" style="margin:0 0 12px">
+          Set aside before grouping, not deleted. A face turned away from the camera or
+          20 pixels tall carries too little information to match reliably — using it
+          anyway is how you get confident wrong matches.
+        </p>
+        {% if output.faces.reject_reasons %}
+        <table class="data">
+          <tr><th>reason</th><th>faces</th></tr>
+          {% for reason, count in output.faces.reject_reasons|dictsort(by='value', reverse=true) %}
+          <tr><td>{{ reason }}</td><td class="n">{{ "{:,}".format(count) }}</td></tr>
+          {% endfor %}
+        </table>
+        {% endif %}
+
+        {% if size_bands %}
+        <h3 style="margin:20px 0 6px">How big the usable faces were</h3>
+        <p class="small muted" style="margin:0 0 8px">
+          Height in the original photo. Below 112px the recogniser is working with less
+          than it wants, and that is where mistakes come from.
+        </p>
+        <div class="bands">
+          {% for name, count, pct in size_bands %}
+            {% if pct > 0 %}<div style="width: {{ pct }}%" title="{{ name }}: {{ "{:,}".format(count) }} faces ({{ pct }}%)">{% if pct > 6 %}{{ pct }}%{% endif %}</div>{% endif %}
+          {% endfor %}
+        </div>
+        <div class="bands-key">
+          {% for name, count, pct in size_bands %}<span>{{ name }} — {{ "{:,}".format(count) }}</span>{% endfor %}
+        </div>
+        {% endif %}
+      </details>
+
+      {% if notes %}
+      <details class="drawer" open>
+        <summary>Notes you’ve left <span class="muted small">{{ notes|length }}</span></summary>
+        {% for note in notes %}
+        <p class="small" style="margin:0 0 8px">
+          <strong>{{ note.reviewer }}</strong>
+          {% if note.person_label %}<span class="pill">{{ note.person_label }}</span>{% endif %}
+          {{ note.text }}
+        </p>
+        {% endfor %}
+      </details>
+      {% endif %}
+
+      <details class="drawer">
+        <summary>Technical detail <span class="muted small">for us, not for the product</span></summary>
+        {# How the merge line was chosen used to be a permanent block beside the
+           faces. It cannot change a decision anybody makes -- the machine picks
+           it, and there is no control to move it -- so it belongs here. #}
+        <p class="small" style="margin:0 0 12px">
+          <strong>Grouping:</strong>
+          {% if auto and auto.measured %}
+            set automatically. {{ auto.headline() }} {{ auto.detail() }}
+            {% for note in auto.notes %}<br><span class="muted">{{ note }}</span>{% endfor %}
+          {% elif dirty %}
+            set by hand, from the address bar.
+          {% else %}
+            {{ auto.headline() if auto else "standard settings, checked against 851 real photos." }}
+          {% endif %}
+        </p>
+        <div class="row" style="align-items:flex-start; gap:32px">
+          <table class="data">
+            <tr><th>how it got here</th><th></th></tr>
+            <tr><td>faces used for grouping</td><td class="n">{{ "{:,}".format(output.faces|length) }}</td></tr>
+            <tr><td>tight groups before merging</td><td class="n">{{ output.result.pass1_group_count }}</td></tr>
+            <tr><td>merges made</td><td class="n">{{ output.result.pass2_merge_count }}</td></tr>
+            <tr><td>merges blocked by the same-photo rule</td><td class="n">{{ output.result.blocked_merges_same_photo }}</td></tr>
+            <tr><td>faces left in no pile</td><td class="n">{{ "{:,}".format(output.result.leftover_face_count) }}</td></tr>
+          </table>
+          <table class="data">
+            <tr><th>setting</th><th>value</th><th>env var</th></tr>
+            <tr><td>pile things together</td><td class="n">{{ "%.2f"|format(settings.pass1_threshold) }}</td><td><code>WFF_PASS1_THRESHOLD</code></td></tr>
+            <tr><td>then merge piles</td><td class="n">{{ "%.2f"|format(settings.pass2_threshold) }}</td><td><code>WFF_PASS2_THRESHOLD</code></td></tr>
+            <tr><td>same-photo rule</td><td class="n">{{ settings.enforce_same_photo_rule }}</td><td><code>WFF_SAME_PHOTO_RULE</code></td></tr>
+            <tr><td>smallest pile</td><td class="n">{{ settings.min_faces_per_person }}</td><td><code>WFF_MIN_FACES_PER_PERSON</code></td></tr>
+            <tr><td>smallest face kept</td><td class="n">{{ config.quality.min_face_px }}px</td><td><code>WFF_MIN_FACE_PX</code></td></tr>
+            <tr><td>tiling</td><td class="n">{{ config.detect.tiling_enabled }}</td><td><code>WFF_TILING</code></td></tr>
+            <tr><td>recogniser</td><td class="n" colspan="2"><code>{{ config.embedding_model_version }}</code></td></tr>
+          </table>
+        </div>
+
+        {% if output.evaluation %}
+        <div class="callout {{ 'alarm' if output.evaluation.merged_people else 'good' }}" style="margin-top:16px">
+          <strong>Scored against the folder names</strong><br>
+          {% for line in output.evaluation.summary_lines() %}{{ line }}<br>{% endfor %}
+        </div>
+        {% endif %}
+
+        {% if not expert %}
+        <p class="small" style="margin:14px 0 0">
+          <a href="?{{ cluster_query(settings) }}&expert=1">Open the manual controls</a> —
+          they change the grouping by hand. Nothing on the normal page needs them.
+        </p>
+        {% endif %}
+      </details>
+
+      {% if dirty %}
+      <div class="callout warn">
+        <strong>Not the automatic grouping.</strong> This page is using settings from the
+        address bar. <a href="{{ url_for('event_page', event_id=event.event_id) }}">Go back to automatic</a>.
+      </div>
+      {% endif %}
+
+      {% for alarm in output.sanity.alarms %}
+      <div class="callout alarm">{{ alarm }}</div>
+      {% endfor %}
+      {% for note in output.sanity.notes %}
+      <div class="callout">{{ note }}</div>
+      {% endfor %}
+
+      {% if expert %}
+      <details class="drawer expert" open>
+        <summary>Manual grouping controls <span class="muted small">diagnostics — never shown to a photographer or a guest</span></summary>
+        <form class="tuner" method="get" id="tuner">
+          <input type="hidden" name="expert" value="1">
+          <div class="knob">
+            <label for="p1">Start a pile only when two faces are this alike</label>
+            <div class="row">
+              <input type="range" id="p1" name="p1" min="0.20" max="0.70" step="0.01" value="{{ "%.2f"|format(settings.pass1_threshold) }}">
+              <span class="value" id="p1-value">{{ "%.2f"|format(settings.pass1_threshold) }}</span>
+            </div>
+          </div>
+          <div class="knob">
+            <label for="p2">Join two piles when they’re this alike</label>
+            <div class="row">
+              <input type="range" id="p2" name="p2" min="0.20" max="0.80" step="0.01" value="{{ "%.2f"|format(settings.pass2_threshold) }}">
+              <span class="value" id="p2-value">{{ "%.2f"|format(settings.pass2_threshold) }}</span>
+            </div>
+            <div class="help">
+              {% if auto and auto.closest_different %}
+              Different people on this folder start at {{ "%.2f"|format(auto.closest_different) }}.
+              {% endif %}
+            </div>
+          </div>
+          <div class="knob">
+            <label for="minf">Photos needed before someone gets their own pile</label>
+            <div class="row">
+              <input type="range" id="minf" name="minf" min="1" max="12" step="1" value="{{ settings.min_faces_per_person }}">
+              <span class="value" id="minf-value">{{ settings.min_faces_per_person }}</span>
+            </div>
+          </div>
+          <label class="row" style="gap:8px">
+            <input type="checkbox" name="sp" value="1" {% if settings.enforce_same_photo_rule %}checked{% endif %}>
+            Two faces in one photo are different people
+          </label>
+          <input type="hidden" name="sc" value="{{ "%.2f"|format(settings.second_class_assign_threshold) }}">
+          <div class="row" style="width:100%">
+            <button class="btn primary" type="submit">Re-group</button>
+            <a class="btn ghost" href="{{ url_for('event_page', event_id=event.event_id) }}">Back to automatic</a>
+          </div>
+        </form>
+        <div class="callout {{ 'warn' if evidence.overlap else 'info' }}" id="threshold-advice" style="margin-top:12px">
+          <strong>Where the line should sit:</strong> {{ evidence.summary() }}
+        </div>
+      </details>
+      {% endif %}
+  </section>
+</div>
+
+{# ================================================== the review window
+   One pile, one question, two keys. The pile itself is MOVED in here rather
+   than copied: the page already holds every crop of every pile, and cloning
+   241 <img> tags to show them again would download nothing twice but would
+   double the DOM of the biggest folder we have. #}
+<div class="rvw" id="rv-window" role="dialog" aria-modal="true" aria-labelledby="rv-question" hidden>
+  <div class="rvw-box">
+    <header class="rvw-head">
+      <div class="stack">
+        <h3 id="rv-question">Is everyone here the same person?</h3>
+        <p class="sub" id="rv-sub">Pile 1</p>
+      </div>
+      <span style="flex:1"></span>
+      <div class="rvw-meter">
+        <div class="progress"><span id="rv-mini-fill" style="width:0%"></span></div>
+        <span class="sub" id="rv-mini-text">0 done</span>
+      </div>
+      <button class="btn ghost" type="button" data-rv="close" aria-label="Close">Close ✕</button>
+    </header>
+
+    <div class="rvw-body" id="rv-slot"></div>
+
+    <div class="rvw-end" id="rv-end" hidden>
+      <h3 id="rv-end-title">All checked.</h3>
+      <p class="cap" id="rv-end-line"></p>
+      <div class="row" style="gap:10px; margin-top:14px; flex-wrap:wrap">
+        <button class="btn primary big" type="button" data-rv="close">Done</button>
+        <a class="btn" href="{{ url_for('judge_page', event_id=event.event_id) }}?{{ cluster_query(settings) }}">
+          Quick check on tricky pairs
+        </a>
+      </div>
+      <p class="small muted" style="margin:12px 0 0">
+        The quick check shows two faces at a time and asks whether they’re the same
+        person. It’s optional, takes about 30 seconds, and only uses pairs the machine
+        was least sure about.
+      </p>
+    </div>
+
+    <footer class="rvw-foot" id="rv-foot-ask">
+      <button class="btn primary big" type="button" data-rv="yes">
+        ✓ Yes, all the same <span class="kbd">Y</span>
+      </button>
+      <button class="btn big" type="button" data-rv="no">
+        ✕ Someone else is in here <span class="kbd">N</span>
+      </button>
+      <span style="flex:1"></span>
+      <span class="small muted" id="rv-hint">Click a face to see the whole photo.</span>
+      <button class="btn ghost" type="button" data-rv="skip">Skip <span class="kbd">→</span></button>
+    </footer>
+
+    <footer class="rvw-foot" id="rv-foot-fix" hidden>
+      <button class="btn primary big" type="button" data-rv="fix-done">Done</button>
+      <button class="btn ghost" type="button" data-rv="fix-cancel">Back</button>
+      <span style="flex:1"></span>
+      <span class="small muted" id="rv-fix-count">Tap every face that isn’t this person.</span>
+    </footer>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  window.WFF = {
+    eventId: {{ event.event_id|tojson }},
+    query: {{ cluster_query(settings)|tojson }},
+    ready: {{ ready|tojson }}
+  };
+</script>
+{% endblock %}

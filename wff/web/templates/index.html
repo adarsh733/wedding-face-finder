@@ -1,0 +1,412 @@
+{% extends "base.html" %}
+{% block title %}Face Finder — admin panel{% endblock %}
+
+{# The home page is full-bleed: the metrics band runs edge to edge and the
+   start card lifts over it. So it replaces base's centred <main> entirely.
+
+   Order is the order of a working day: how it's going, start a run, then the
+   runs themselves — right under the box you just typed into, because that is
+   where the run you started will appear. Everything below that is a card, so
+   no two things ever blur into one another. #}
+{% block main %}
+
+{# ------------------------------------------------ how it's going, first #}
+<section class="band">
+  <div class="band-top">
+    <div>
+      <div class="name">Everything we’ve tested to date</div>
+      <div class="sub">
+        {{ board.events|length }} folder{{ '' if board.events|length == 1 else 's' }} ·
+        {{ board.totals.runs }} run{{ '' if board.totals.runs == 1 else 's' }} ·
+        local only, nothing leaves this machine
+      </div>
+    </div>
+  </div>
+
+  <div class="bignums">
+    <div>
+      <div class="v">{{ "{:,}".format(board.photos_processed) }}</div>
+      <div class="k">photos processed</div>
+      <div class="d">
+        {% if board.reprocessed_photos %}
+          {{ "{:,}".format(board.distinct_photos) }} different photos ·
+          {{ "{:,}".format(board.reprocessed_photos) }} run twice with new settings
+        {% else %}
+          all different photos
+        {% endif %}
+      </div>
+    </div>
+    <div>
+      <div class="v">{{ "{:,}".format(board.faces_detected) }}</div>
+      <div class="k">faces found</div>
+      <div class="d">{{ "{:,}".format(board.faces_accepted) }} clear enough to use</div>
+    </div>
+    <div>
+      {% if board.has_timing %}
+      <div class="v">{{ "%.1f"|format(board.seconds_per_photo) }}<small>s</small></div>
+      <div class="k">per photo</div>
+      <div class="d">
+        measured over {{ board.totals.per_photo_samples }} timed run{{ '' if board.totals.per_photo_samples == 1 else 's' }}
+        {%- if board.totals.fastest_seconds_per_photo %} · fastest {{ "%.1f"|format(board.totals.fastest_seconds_per_photo) }}s{% endif %}
+      </div>
+      {% else %}
+      <div class="v pending">not timed yet</div>
+      <div class="k">per photo</div>
+      <div class="d">estimating at {{ "%.2f"|format(board.seconds_per_photo) }}s until a run is timed</div>
+      {% endif %}
+    </div>
+    <div>
+      {% if board.machine_seconds %}
+      <div class="v">{{ human_duration(board.machine_seconds) }}</div>
+      <div class="k">machine time</div>
+      <div class="d">
+        across {{ board.totals.timed_runs }} timed run{{ '' if board.totals.timed_runs == 1 else 's' }} ·
+        {{ "%.1f"|format(board.source_gb) }} GB read
+      </div>
+      {% else %}
+      <div class="v pending">not recorded</div>
+      <div class="k">machine time</div>
+      <div class="d">{{ "%.1f"|format(board.source_gb) }} GB read · timing starts with your next run</div>
+      {% endif %}
+    </div>
+    <div>
+      {% if board.people_found or not board.events_unmeasured %}
+      <div class="v">{{ board.people_found }}</div>
+      <div class="k">people identified</div>
+      <div class="d">
+        {% if board.events_unmeasured %}
+          {{ board.events_unmeasured }} folder{{ '' if board.events_unmeasured == 1 else 's' }} not counted yet — open {{ 'it' if board.events_unmeasured == 1 else 'them' }} once
+        {% else %}
+          across every folder
+        {% endif %}
+      </div>
+      {% else %}
+      <div class="v pending">not counted</div>
+      <div class="k">people identified</div>
+      <div class="d">open a folder’s review page once and it appears here</div>
+      {% endif %}
+    </div>
+  </div>
+</section>
+
+<div class="home-tint">
+
+  {# ---------------------------------------------------------- start a run #}
+  <div class="lift">
+    <div class="lift-card">
+      <div class="row" style="align-items:baseline; margin-bottom:14px">
+        <h2>Start a run</h2>
+        <span class="muted" style="font-size:15px">A folder on this computer, or a public Google Drive link.</span>
+      </div>
+
+      {% if request.args.get('error') %}
+      <div class="callout alarm" style="margin-bottom:14px">{{ request.args.get('error') }}</div>
+      {% endif %}
+
+      <form method="post" action="{{ url_for('start_run') }}">
+        <input type="hidden" name="reviewer" id="run-reviewer" value="">
+        <div class="start-row">
+          <div class="grow">
+            <input type="text" name="link" class="mono" required aria-label="Folder to process"
+                   placeholder="D:\Photos\Sharma wedding    or    https://drive.google.com/drive/folders/...">
+          </div>
+          <div style="flex:0 0 210px">
+            <input type="text" name="event_id" class="mono" aria-label="Name this run"
+                   placeholder="name (optional)" style="width:100%">
+          </div>
+          <button class="btn primary big" type="submit">Start</button>
+        </div>
+      </form>
+
+      {# ------------------------------------------------ the one-time Google key #}
+      {# Google will not hand a public Drive folder to a program without a key.
+         It is one paste, once, and it belongs here rather than in a terminal. #}
+      <div class="keybox{% if need_key %} open{% endif %}" id="keybox"
+           data-link="{{ pending_link }}" data-event-id="{{ pending_event_id }}">
+
+        <div class="keyline">
+          {% if key_set %}
+            <span class="dot ok"></span>
+            <span>Google Drive links are set up.</span>
+            <button type="button" class="linkbtn" data-action="key-open">change the key</button>
+          {% else %}
+            <span class="dot off"></span>
+            <span>Google Drive links need a one-time setup.</span>
+            <button type="button" class="linkbtn" data-action="key-open">set it up</button>
+          {% endif %}
+        </div>
+
+        <div class="keypanel" id="keypanel"{% if not need_key %} hidden{% endif %}>
+          {% if need_key %}
+          <p class="keyhead">Almost — that Drive link needs a key first.</p>
+          {% endif %}
+          <p class="small muted" style="margin-top:0">
+            Google hands public folders to people freely, but it wants a name badge from a
+            program. The badge is free, takes two minutes, and only ever reads folders that
+            are already public — it is not a login and it cannot reach anyone’s private files.
+          </p>
+          <ol class="keysteps small">
+            <li>Open <a href="https://console.cloud.google.com/apis/credentials" target="_blank"
+                        rel="noopener">console.cloud.google.com</a> and make a project — any name.</li>
+            <li><b>APIs &amp; Services → Library</b> → search <b>Google Drive API</b> → <b>Enable</b>.</li>
+            <li><b>Credentials → Create credentials → API key</b>.</li>
+            <li>Under <b>API restrictions</b> pick <b>Google Drive API</b>. Leave
+                <b>Application restrictions</b> on <b>None</b> — “Websites” blocks this program.</li>
+          </ol>
+          <div class="start-row">
+            <div class="grow">
+              <input type="text" id="key-input" class="mono" aria-label="Google API key"
+                     placeholder="AIza..." autocomplete="off" spellcheck="false">
+            </div>
+            <button type="button" class="btn primary" data-action="key-save">Save and check</button>
+          </div>
+          <p class="small muted" id="key-result" style="margin:10px 0 0"></p>
+        </div>
+      </div>
+
+      {# The estimate used to live in a block of advice below. The advice is
+         gone — this is the one line of it worth keeping, because it answers
+         "can I start this now or is it a tomorrow job?" #}
+      <div class="lift-foot">
+        <p class="small muted" style="margin:0; flex:1 1 340px">
+          Sub-folders included. Videos and RAW files skipped. Closing the tab doesn’t stop
+          it, and running the same folder again carries on instead of starting over.
+        </p>
+        <div class="calcline">
+          <span>Processing</span>
+          <input type="text" id="calc-photos" value="5,000" aria-label="Number of photos to estimate"
+                 inputmode="numeric">
+          <span>photos takes about</span>
+          <b id="calc-out">{{ human_forecast(5000 * board.seconds_per_photo) }}</b>
+          <span class="basis" id="calc-basis">
+            {% if board.has_timing %}
+              at {{ "%.1f"|format(board.seconds_per_photo) }}s each, your measured average
+            {% else %}
+              at {{ "%.2f"|format(board.seconds_per_photo) }}s each, measured on Manali
+            {% endif %}
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="home-body">
+
+    {# ----------------------------------------------------- anything live #}
+    {% if active %}
+    <section class="card">
+      <div class="card-head">
+        <h2>Running now</h2>
+        <span class="card-note">Updates on its own — no need to refresh.</span>
+      </div>
+      <div class="card-body">
+        <div class="runcards">
+          {% for job in active %}
+          <a class="runcard live" href="{{ url_for('event_page', event_id=job.event_id, job=job.job_id) }}">
+            <div class="head">
+              <span class="title" title="{{ job.event_id }}">{{ job.event_id }}</span>
+              <span class="phase"><span class="dot"></span>{{ job.phase }}</span>
+            </div>
+            <div class="progress" style="margin-top:14px"><span style="width: {{ job.percent }}%"></span></div>
+            <div class="small muted" style="margin-top:8px">{{ job.message }}</div>
+          </a>
+          {% endfor %}
+        </div>
+      </div>
+    </section>
+    {% endif %}
+
+    {# ------------------------------------------------------------ history
+       Biggest first, and split into three size groups. Adarsh's reason: a
+       4,000-photo wedding is where this product works or doesn't, and a
+       17-photo test folder run this morning is not more important than it.
+       The groups are headed rather than only colour-coded, so the ordering
+       principle is stated on the page instead of having to be learned. #}
+    <section class="card" id="recent-runs">
+      <div class="card-head">
+        <h2>Recent runs</h2>
+        <span class="card-note">
+          {{ events|length }} folder{{ '' if events|length == 1 else 's' }} · biggest first
+        </span>
+        {% if events|length > 3 %}
+        <input type="text" class="card-filter" id="run-filter" autocomplete="off"
+               placeholder="filter by name…" aria-label="Filter runs by name">
+        {% endif %}
+      </div>
+
+      {% if events %}
+      {# Fixed height on purpose: this list only grows, and a page that gets
+         taller every week pushes everything else off the screen. #}
+      <div class="scroller" id="run-scroller">
+        {% for group in groups %}
+        <div class="sizegroup" data-group="{{ group.key }}">
+          {# The heading says what the group means ("500+ photos each"), which
+             is what the colour legend above the list used to say. One less
+             thing on the page for the same information. #}
+          <div class="grouphead g-{{ group.key }}">
+            <i></i>
+            <span class="t">{{ group.title }}</span>
+            <span class="c">{{ group.range_text }} each</span>
+            <span class="rule"></span>
+            <span class="c">
+              {{ group.events|length }} folder{{ '' if group.events|length == 1 else 's' }} ·
+              {{ "{:,}".format(group.photos) }} photos
+            </span>
+          </div>
+
+          <div class="runcards">
+            {% for event in group.events %}
+            <div class="runcard"
+                 data-name="{{ (event.name ~ ' ' ~ event.event_id)|lower }}"
+                 data-event="{{ event.event_id }}">
+
+              {# Row 1 — the name, and the one thing you need to know about it.
+                 The name gets its own line and truncates rather than wrapping:
+                 an auto-generated folder id is 30 characters and used to stack
+                 its letters vertically down the side of the card. #}
+              <div class="head">
+                <span class="title" data-role="name" title="{{ event.name }}">{{ event.name }}</span>
+                <button type="button" class="iconbtn" data-action="rename"
+                        title="Rename this run" aria-label="Rename {{ event.name }}">✎</button>
+                {% if not event.has_faces %}
+                  <span class="state idle">not processed</span>
+                {% elif event.last_phase == 'failed' %}
+                  <span class="state bad">failed</span>
+                {% elif event.last_phase == 'stopped' %}
+                  <span class="state warn">stopped early</span>
+                {% elif event.too_small_to_judge %}
+                  <span class="state warn">too small to tell</span>
+                {% else %}
+                  <span class="state ok">done</span>
+                {% endif %}
+              </div>
+
+              {# Row 2 — context, all of it quiet: the id (only when the name no
+                 longer is it), when it last ran, and how big the folder is.
+                 These were three separate coloured things before. #}
+              {# The dots between these are drawn in CSS, not written here — a
+                 hand-written separator is a bug waiting for the day the piece
+                 after it is absent, and half of these are optional. #}
+              <div class="meta">
+                {% if event.renamed %}
+                <span class="mono" title="the folder id on disk — never changes">{{ event.event_id }}</span>
+                {% endif %}
+                {% if event.when %}
+                {# Which date this is lives in the tooltip, not on the line. All
+                   six folders from before run timing existed would otherwise
+                   carry the same footnote, six times, saying nothing. #}
+                <time datetime="{{ event.when }}"
+                      title="{{ 'Last run' if event.last_run_at else 'Added — this folder was processed before run timing existed' }}">{{ human_when(event.when) }}</time>
+                {% endif %}
+                {% if event.run_count > 1 %}
+                <span>{{ event.run_count }} runs</span>
+                {% endif %}
+                {# How many photos is a number in the row below; this is only
+                   how heavy the folder is, which nothing else says. #}
+                {% if event.total_bytes >= 5e8 %}
+                <span>{{ "%.1f"|format(event.total_bytes / 1e9) }} GB</span>
+                {% elif event.total_bytes %}
+                <span>{{ "{:,}".format((event.total_bytes / 1e6)|round|int) }} MB</span>
+                {% endif %}
+                {% if event.failed %}
+                <span class="fail">{{ event.failed }} couldn’t be read</span>
+                {% endif %}
+              </div>
+
+              {# Row 3 — always the same four columns, in the same order, so the
+                 numbers line up down the grid and cards can be compared without
+                 reading their labels. A missing number is a dash, not a
+                 sentence: "not recorded" set in 14px was the widest thing on
+                 the card and it says nothing. #}
+              <div class="facts">
+                <div>
+                  <div class="n">{{ "{:,}".format(event.processed) }}</div>
+                  <div class="l">{% if event.size > event.processed %}of {{ "{:,}".format(event.size) }} photos{% else %}photo{{ '' if event.processed == 1 else 's' }}{% endif %}</div>
+                </div>
+                <div>
+                  <div class="n{{ '' if event.faces_detected else ' dim' }}">{{ "{:,}".format(event.faces_detected) if event.faces_detected else "—" }}</div>
+                  <div class="l">face{{ '' if event.faces_detected == 1 else 's' }}</div>
+                </div>
+                <div>
+                  <div class="n{{ '' if event.people_found is not none else ' dim' }}">{{ event.people_found if event.people_found is not none else "—" }}</div>
+                  <div class="l">{{ 'person' if event.people_found == 1 else 'people' }}</div>
+                </div>
+                <div>
+                  {% if event.total_seconds %}
+                  <div class="n">{{ human_duration(event.total_seconds) }}</div>
+                  <div class="l">took{% if event.seconds_per_photo %} · {{ "%.1f"|format(event.seconds_per_photo) }}s each{% endif %}</div>
+                  {% else %}
+                  <div class="n dim" title="this folder ran before the console recorded timings">—</div>
+                  <div class="l">took</div>
+                  {% endif %}
+                </div>
+              </div>
+
+              <div class="foot">
+                {# Was "before we tracked who", which said nothing to anybody.
+                   The six folders processed before the console asked for a name
+                   now offer to take one. #}
+                {% if event.tested_by %}
+                <span class="who" data-role="who">
+                  <span class="av {{ 'd' if event.tested_by|lower == 'devesh' else '' }}">{{ event.tested_by[0]|upper }}</span>
+                  {{ event.tested_by }}
+                  <button type="button" class="iconbtn" data-action="set-who"
+                          title="Change who ran this">✎</button>
+                </span>
+                {% else %}
+                <span class="who" data-role="who">
+                  <span class="av u">?</span>
+                  <button type="button" class="linkbtn" data-action="set-who">set who ran this</button>
+                </span>
+                {% endif %}
+                <span style="flex:1"></span>
+                <a class="btn {{ 'primary' if event.has_faces else '' }}"
+                   href="{{ url_for('event_page', event_id=event.event_id) }}">
+                  {{ 'Review' if event.has_faces else 'Open' }}
+                </a>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endfor %}
+        <p class="scroller-empty" id="run-filter-empty" hidden>No folder by that name.</p>
+      </div>
+      {% else %}
+      <div class="card-body muted">Nothing yet. Paste a folder above and press Start.</div>
+      {% endif %}
+    </section>
+
+    {# --------------------------------------------------- what it's doing #}
+    <section class="card">
+      <details class="card-details">
+        <summary class="card-head">
+          <h2>What the machine actually does</h2>
+          <span class="card-note">the three steps, in plain words</span>
+        </summary>
+        <div class="card-body" style="line-height:1.7; max-width:88ch">
+          <p style="margin-top:0"><strong>Step 1 — find the faces.</strong> Every photo is opened at
+          full resolution, turned the right way up, and searched for faces — both the whole
+          frame and in overlapping tiles, so a small face in the back row isn’t missed.
+          Faces too small, too blurry or too side-on are set aside. This is the slow part,
+          and it’s saved to disk, so it only ever happens once per folder.</p>
+          <p><strong>Step 2 — group them.</strong> Each face becomes 512 numbers. Faces with
+          close numbers are piled together, tightly at first, then piles are merged only
+          when there’s evidence. One rule is free and absolute: two faces in the same photo
+          are never the same person. This part takes seconds, which is why you can re-tune
+          it as often as you like.</p>
+          <p style="margin-bottom:0"><strong>Step 3 — you check it.</strong> The review page shows every
+          pile in full. Marking a pile right or a face wrong isn’t just a note: it becomes
+          the answer key, and every future run is scored against it.</p>
+        </div>
+      </details>
+    </section>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  window.WFF = { home: true, secondsPerPhoto: {{ "%.4f"|format(board.seconds_per_photo) }} };
+</script>
+{% endblock %}

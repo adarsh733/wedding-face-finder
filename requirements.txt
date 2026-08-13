@@ -1,0 +1,24 @@
+# Wedding Face Finder — Stage 1 + Stage 2 (local scripts, week 1-2)
+#
+# Deliberately NOT depending on the `insightface` package. We load the ONNX
+# weights directly and implement SCRFD decoding / 5-point alignment ourselves
+# (wff/process/detect.py, wff/process/align.py). Three reasons:
+#   1. insightface has no prebuilt wheel for CPython 3.12 on Windows; it needs
+#      an MSVC toolchain to build its Cython extension.
+#   2. We need to drive the detector tile-by-tile at native resolution, which
+#      its FaceAnalysis wrapper does not expose.
+#   3. Landmine #1 in docs/ARCHITECTURE.md — the pretrained weights are
+#      non-commercial. Keeping the model behind our own Detector/Embedder
+#      interfaces makes swapping them a one-file change.
+
+numpy>=1.26
+onnxruntime>=1.17          # CPU inference. Swap for onnxruntime-gpu on a rented GPU.
+opencv-python-headless>=4.9 # warpAffine, resize, blobFromImage. headless = no GUI deps.
+pillow>=10.0               # decode + EXIF transpose + derivatives
+pillow-heif>=0.15          # iPhone .HEIC (docs/ARCHITECTURE.md step 1 edge cases)
+pyarrow>=15.0              # faces.parquet
+pandas>=2.0                # stage 2 dataframes
+scikit-learn>=1.4          # AgglomerativeClustering
+requests>=2.31             # model weight download
+tqdm>=4.66                 # progress on a 4-hour job
+flask>=3.0                 # the local testing console (wff/web). `python -m wff ui`
